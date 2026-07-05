@@ -117,9 +117,16 @@ class HpdosBeta < Formula
   def token_from_gh_cli
     return "" if gh_binary.to_s.empty?
 
-    candidates = [{}, { HOME: "/", XDG_CONFIG_HOME: "/.config" }]
+    base_env = {
+      GH_HOST: "github.com",
+      GH_TOKEN: ENV["GH_TOKEN"]&.to_s,
+      GITHUB_TOKEN: ENV["GITHUB_TOKEN"]&.to_s,
+      HOMEBREW_GITHUB_API_TOKEN: ENV["HOMEBREW_GITHUB_API_TOKEN"]&.to_s,
+    }.reject { |_k, v| v.to_s.empty? }
+
+    candidates = [base_env.dup, base_env.merge(HOME: "/", XDG_CONFIG_HOME: "/.config")]
     github_home_candidates.each do |home|
-      candidates.unshift({ HOME: home.to_s, XDG_CONFIG_HOME: (home/".config").to_s })
+      candidates.unshift(base_env.merge(HOME: home.to_s, XDG_CONFIG_HOME: (home/".config").to_s))
     end
 
     candidates.each do |env_overrides|
