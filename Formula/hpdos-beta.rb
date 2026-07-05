@@ -29,10 +29,6 @@ class HpdosBeta < Formula
     "https://api.github.com/repos/#{release_repo}/releases/tags/#{release_tag}"
   end
 
-  def release_asset_url
-    "https://github.com/#{release_repo}/releases/download/#{release_tag}/#{artifact_name}"
-  end
-
   def artifact_name
     if OS.mac?
       Hardware::CPU.arm? ? "hpdos-osx-arm64.tar.gz" : "hpdos-osx-x64.tar.gz"
@@ -201,28 +197,6 @@ class HpdosBeta < Formula
     end
   end
 
-  def download_direct_asset(token)
-    return false unless valid_github_token?(token)
-
-    begin
-      Utils.safe_popen_read(
-        "curl",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--header",
-        "Authorization: token #{token}",
-        "--output",
-        artifact_name,
-        release_asset_url,
-      )
-      return true
-    rescue StandardError
-      false
-    end
-  end
-
   def download_with_gh_release(token)
     return false unless valid_github_token?(token)
 
@@ -246,9 +220,8 @@ class HpdosBeta < Formula
     token = github_token
 
     if valid_github_token?(token)
-      return if download_direct_asset(token)
-      return if download_with_gh_release(token)
       return if download_with_api(token)
+      return if download_with_gh_release(token)
     end
 
     if gh_binary.executable?
