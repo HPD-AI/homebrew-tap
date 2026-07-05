@@ -32,6 +32,7 @@ class HpdosBeta < Formula
   def current_user_home
     candidates = [
       ENV["HOME"],
+      Etc.getpwuid(Process.uid)&.dir,
       ENV["SUDO_USER"] && "/Users/#{ENV["SUDO_USER"]}",
       ENV["USER"] && "/Users/#{ENV["USER"]}",
       ENV["LOGNAME"] && "/Users/#{ENV["LOGNAME"]}",
