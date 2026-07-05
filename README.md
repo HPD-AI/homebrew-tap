@@ -6,6 +6,8 @@ Homebrew formulas for HPDOS.
 
 ```bash
 brew tap HPD-AI/tap
+export HOMEBREW_GITHUB_API_TOKEN=...
+# alternatively export GH_TOKEN or GITHUB_TOKEN
 brew install hpdos-beta
 ```
 
@@ -19,6 +21,11 @@ HPDOS CLI binaries for Homebrew are mirrored into releases on the main repo as:
 - `hpdos-linux-arm64.tar.gz`
 - `hpdos-linux-x64.tar.gz`
 
-The tap must stay public so Homebrew can download artifacts without auth.
+This formula downloads release artifacts from the private `HPD-AI/HPD-OS` release channel via GitHub API.
+For Homebrew install to work, set one of:
+
+- `HOMEBREW_GITHUB_API_TOKEN`
+- `GH_TOKEN`
+- `GITHUB_TOKEN`
 
 > Note: The stable formula (`hpdos`) is not published yet; install via `hpdos-beta` for now.
