@@ -35,4 +35,3 @@ class HpdosBeta < Formula
     assert_match version.to_s, shell_output("#{bin}/hpdos-beta update")
   end
 end
-end
