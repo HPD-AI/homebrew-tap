@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "yaml"
 require "etc"
 
 class HpdosBeta < Formula
@@ -26,7 +25,11 @@ class HpdosBeta < Formula
     end
   end
 
-  def release_asset_url
+  def release_api_url
+    "https://api.github.com/repos/HPD-AI/HPD-OS/releases/tags/#{release_tag}"
+  end
+
+  def release_download_url
     "https://github.com/HPD-AI/HPD-OS/releases/download/#{release_tag}/#{artifact_name}"
   end
 
@@ -45,71 +48,47 @@ class HpdosBeta < Formula
     @gh_binary_path = candidates.find { |candidate| File.executable?(candidate) }
   end
 
-  def candidate_home_paths
-    [ENV["HOME"], "/Users/#{ENV["USER"]}", "/Users/#{ENV["LOGNAME"]}", "/Users/#{Etc.getlogin}"]
-      .compact
-      .uniq
-      .select { |path| path.start_with?("/") && File.directory?(path) }
-  end
-
-  def gh_config_home
-    candidate_home_paths.find do |path|
-      File.directory?(Pathname.new(path).join(".config", "gh"))
-    end
-  end
-
-  def gh_token_from_file(home_path)
-    hosts_file = Pathname.new(home_path).join(".config", "gh", "hosts.yml")
-    return "" unless hosts_file.file?
-
-    hosts = YAML.safe_load(hosts_file.read)
-    github_host = hosts && (hosts["github.com"] || hosts["https://github.com"])
-    token = github_host && github_host["oauth_token"]
-    token.to_s.strip
-  rescue StandardError
-    ""
+  def candidate_homes
+    [
+      ENV["HOME"],
+      "/Users/#{ENV["USER"]}",
+      "/Users/#{ENV["LOGNAME"]}",
+      "/Users/#{Etc.getlogin rescue nil}",
+      "/Users/ewoof",
+    ].compact.uniq.select { |path| path.start_with?("/") && File.directory?(path) }
   end
 
   def gh_token_from_command
     return "" unless (gh = gh_binary_path)
 
-    token = Utils.safe_popen_read(gh, "auth", "token", "-h", "github.com").strip
-    return token unless token.empty?
-
-    candidate_home_paths.each do |home_path|
-      token = with_env("HOME" => home_path) do
+    candidate_homes.each do |home_path|
+      token = with_env(
+        "HOME" => home_path,
+        "GH_CONFIG_DIR" => File.join(home_path, ".config", "gh"),
+      ) do
         Utils.safe_popen_read(gh, "auth", "token", "-h", "github.com").strip
+      rescue StandardError
+        ""
       end
-      return token unless token.empty?
+      return token unless token.to_s.empty?
     end
 
-    ""
-  rescue StandardError
     ""
   end
 
   def github_token
-    token = [ENV["HOMEBREW_GITHUB_API_TOKEN"], ENV["GITHUB_TOKEN"], ENV["GH_TOKEN"]]
-      .compact
-      .map(&:to_s)
-      .find { |value| !value.strip.empty? }
+    token = [
+      ENV["HOMEBREW_GITHUB_API_TOKEN"],
+      ENV["GITHUB_TOKEN"],
+      ENV["GH_TOKEN"],
+    ].compact.map(&:to_s).find { |value| !value.strip.empty? }
+
     return token.strip unless token.to_s.empty?
 
-    token = gh_token_from_command
-    return token unless token.empty?
-
-    token = gh_token_from_file(gh_config_home || ENV["HOME"].to_s)
-    return token unless token.empty?
-
-    candidate_home_paths.each do |home_path|
-      file_token = gh_token_from_file(home_path)
-      return file_token unless file_token.empty?
-    end
-
-    ""
+    gh_token_from_command
   end
 
-  def auth_headers(token)
+  def api_headers(token)
     headers = [
       "--header", "Accept: application/vnd.github+json",
       "--header", "X-GitHub-Api-Version: 2022-11-28",
@@ -118,8 +97,41 @@ class HpdosBeta < Formula
     headers
   end
 
-  def download_with_headers(url, token = "")
+  def release_payload(token)
+    response = Utils.safe_popen_read(
+      "curl",
+      "--fail",
+      "--silent",
+      "--show-error",
+      "--location",
+      *api_headers(token),
+      release_api_url,
+    )
+    JSON.parse(response)
+  rescue StandardError
+    {}
+  end
+
+  def api_asset_url(token)
+    payload = release_payload(token)
+    assets = Array(payload["assets"])
+    asset = assets.find { |entry| entry["name"] == artifact_name }
+    return nil unless asset
+
+    asset["url"]
+  end
+
+  def download_with_headers(url, token, asset_download: false)
     return false if url.to_s.empty?
+
+    headers = [
+      "--header",
+      asset_download ? "Accept: application/octet-stream" : "Accept: application/vnd.github+json",
+      "--header",
+      "User-Agent: Homebrew",
+    ]
+    headers << "--header" << "Authorization: token #{token}" unless token.to_s.empty?
+    headers << "--header" << "X-GitHub-Api-Version: 2022-11-28" unless asset_download
 
     system(
       "curl",
@@ -129,44 +141,13 @@ class HpdosBeta < Formula
       "--show-error",
       "--output",
       artifact_name,
-      "--header",
-      "Accept: application/octet-stream",
-      *(token.to_s.empty? ? [] : auth_headers(token)),
+      *headers,
       url,
     )
   end
 
-  def release_payload(token)
-    Utils.safe_popen_read(
-      "curl",
-      "--fail",
-      "--silent",
-      "--show-error",
-      "--location",
-      *auth_headers(token),
-      "https://api.github.com/repos/HPD-AI/HPD-OS/releases/tags/#{release_tag}",
-    )
-  end
-
-  def api_asset_url(token)
-    payload = release_payload(token)
-    release = JSON.parse(payload)
-    assets = Array(release["assets"])
-    asset = assets.find { |entry| entry["name"] == artifact_name }
-    odie "Release asset #{artifact_name} was not found in #{release_tag}." unless asset
-
-    asset["url"]
-  end
-
   def download_with_gh(token = "")
     return false unless (gh = gh_binary_path)
-    token = token.to_s
-
-    env = {
-      "HOMEBREW_GITHUB_API_TOKEN" => token,
-      "GITHUB_TOKEN" => token,
-      "GH_TOKEN" => token,
-    }.merge(gh_runtime_env)
 
     command = [
       gh,
@@ -179,38 +160,33 @@ class HpdosBeta < Formula
       artifact_name,
     ]
 
-    if token.empty?
-      return system(*command)
+    return true if token.to_s.empty? && system(*command)
+
+    with_env(
+      "HOMEBREW_GITHUB_API_TOKEN" => token,
+      "GITHUB_TOKEN" => token,
+      "GH_TOKEN" => token,
+      "HOME" => ENV["HOME"],
+      "GH_CONFIG_DIR" => File.join(ENV["HOME"], ".config", "gh"),
+    ) do
+      system(*command)
     end
-
-    system(env, *command)
-  rescue StandardError
-    false
-  end
-
-  def gh_runtime_env
-    home = (ENV["HOME"] || "/Users/#{Etc.getlogin}").to_s
-    config_home = ENV.fetch("GH_CONFIG_DIR", nil)
-    config_home = File.join(home, ".config", "gh") if config_home.to_s.empty?
-    {
-      "HOME" => home,
-      "GH_CONFIG_DIR" => config_home,
-    }
   end
 
   def download_release_asset
     token = github_token
 
-    return true if download_with_gh(token.to_s) if token.to_s.empty? == false
-    return true if download_with_gh if token.to_s.empty?
-
-    # Fallback for token-authenticated API download.
-    unless token.to_s.empty?
-      return true if download_with_headers(api_asset_url(token), token)
+    if !token.empty?
+      asset_url = api_asset_url(token)
+      return true if download_with_headers(asset_url, token, asset_download: true) unless asset_url.to_s.empty?
+      return true if download_with_gh(token)
     end
 
-    # Last-resort public fallback.
-    download_with_headers(release_asset_url)
+    # Last-resort public fallback for public repos.
+    return true if download_with_headers(release_download_url, "")
+
+    # If public fallback fails, try gh without env token (for anonymous attempts).
+    download_with_gh
   end
 
   def extract_archive
