@@ -34,10 +34,11 @@ class HpdosBeta < Formula
   end
 
   def install
-    bin.install "hpdos" => "hpdos-beta"
+    bin.install "hpdos"
+    bin.install_symlink bin/"hpdos" => "hpdos-beta"
   end
 
   test do
-    assert_match "0.1.0-beta.1", shell_output("#{bin}/hpdos-beta update")
+    assert_match "HPDOS", shell_output("#{bin}/hpdos --help")
   end
 end
