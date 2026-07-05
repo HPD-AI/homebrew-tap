@@ -28,6 +28,8 @@ class HpdosBeta < Formula
 
   def install
     bin.install "hpdos" => "hpdos-beta"
+    bin.install_symlink "hpdos-beta" => "hpdos"
+    bin.install_symlink "hpdos-beta" => "hpd"
   end
 
   test do
