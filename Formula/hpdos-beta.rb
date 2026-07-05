@@ -162,6 +162,12 @@ class HpdosBeta < Formula
     return false unless (gh = gh_binary_path)
     token = token.to_s
 
+    env = {
+      "HOMEBREW_GITHUB_API_TOKEN" => token,
+      "GITHUB_TOKEN" => token,
+      "GH_TOKEN" => token,
+    }.merge(gh_runtime_env)
+
     command = [
       gh,
       "release",
@@ -177,15 +183,19 @@ class HpdosBeta < Formula
       return system(*command)
     end
 
-    with_env(
-      "GITHUB_TOKEN" => token,
-      "GH_TOKEN" => token,
-      "HOMEBREW_GITHUB_API_TOKEN" => token,
-    ) do
-      system(*command)
-    end
+    system(env, *command)
   rescue StandardError
     false
+  end
+
+  def gh_runtime_env
+    home = (ENV["HOME"] || "/Users/#{Etc.getlogin}").to_s
+    config_home = ENV.fetch("GH_CONFIG_DIR", nil)
+    config_home = File.join(home, ".config", "gh") if config_home.to_s.empty?
+    {
+      "HOME" => home,
+      "GH_CONFIG_DIR" => config_home,
+    }
   end
 
   def download_release_asset
