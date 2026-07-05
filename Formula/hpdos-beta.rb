@@ -181,7 +181,7 @@ class HpdosBeta < Formula
       asset_url = asset["url"]
       return false unless asset_url
 
-      Utils.safe_popen_read(
+      system(
         "curl",
         "--fail",
         "--silent",
@@ -198,7 +198,7 @@ class HpdosBeta < Formula
         asset_url,
       )
 
-      return true
+      return File.exist?(artifact_name) && !File.zero?(artifact_name)
     rescue StandardError
       false
     end
